@@ -3,6 +3,7 @@ import json
 import random
 import requests
 import configparser
+import traceback
 from datetime import datetime
 
 from selenium import webdriver
@@ -11,9 +12,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait as Wait
 from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
-
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail
 
 from embassy import *
 
@@ -38,7 +36,7 @@ REGEX_CONTINUE = Embassies[YOUR_EMBASSY][2]
 
 # Notification:
 # Get email notifications via https://sendgrid.com/ (Optional)
-SENDGRID_API_KEY = config['NOTIFICATION']['SENDGRID_API_KEY']
+# SENDGRID_API_KEY = config['NOTIFICATION']['SENDGRID_API_KEY']
 # Get push notifications via https://pushover.net/ (Optional)
 PUSHOVER_TOKEN = config['NOTIFICATION']['PUSHOVER_TOKEN']
 PUSHOVER_USER = config['NOTIFICATION']['PUSHOVER_USER']
@@ -54,8 +52,8 @@ hour = 60 * minute
 # Time between steps (interactions with forms)
 STEP_TIME = 0.5
 # Time between retries/checks for available dates (seconds)
-RETRY_TIME_L_BOUND = config['TIME'].getfloat('RETRY_TIME_L_BOUND')
-RETRY_TIME_U_BOUND = config['TIME'].getfloat('RETRY_TIME_U_BOUND')
+RETRY_TIME_L_BOUND = int(config['TIME'].getfloat('RETRY_TIME_L_BOUND'))
+RETRY_TIME_U_BOUND = int(config['TIME'].getfloat('RETRY_TIME_U_BOUND'))
 # Cooling down after WORK_LIMIT_TIME hours of work (Avoiding Ban)
 WORK_LIMIT_TIME = config['TIME'].getfloat('WORK_LIMIT_TIME')
 WORK_COOLDOWN_TIME = config['TIME'].getfloat('WORK_COOLDOWN_TIME')
@@ -82,36 +80,36 @@ JS_SCRIPT = ("var req = new XMLHttpRequest();"
              "req.send(null);"
              "return req.responseText;")
 
-def send_notification(title, msg):
-    print(f"Sending notification!")
-    if SENDGRID_API_KEY:
-        message = Mail(from_email=USERNAME, to_emails=USERNAME, subject=msg, html_content=msg)
-        try:
-            sg = SendGridAPIClient(SENDGRID_API_KEY)
-            response = sg.send(message)
-            print(response.status_code)
-            print(response.body)
-            print(response.headers)
-        except Exception as e:
-            print(e.message)
-    if PUSHOVER_TOKEN:
-        url = "https://api.pushover.net/1/messages.json"
-        data = {
-            "token": PUSHOVER_TOKEN,
-            "user": PUSHOVER_USER,
-            "message": msg
-        }
-        requests.post(url, data)
-    if PERSONAL_SITE_USER:
-        url = PERSONAL_PUSHER_URL
-        data = {
-            "title": "VISA - " + str(title),
-            "user": PERSONAL_SITE_USER,
-            "pass": PERSONAL_SITE_PASS,
-            "email": PUSH_TARGET_EMAIL,
-            "msg": msg,
-        }
-        requests.post(url, data)
+# def send_notification(title, msg):
+#     print(f"Sending notification!")
+#     if SENDGRID_API_KEY:
+#         message = Mail(from_email=USERNAME, to_emails=USERNAME, subject=msg, html_content=msg)
+#         try:
+#             sg = SendGridAPIClient(SENDGRID_API_KEY)
+#             response = sg.send(message)
+#             print(response.status_code)
+#             print(response.body)
+#             print(response.headers)
+#         except Exception as e:
+#             print(e.message)
+#     if PUSHOVER_TOKEN:
+#         url = "https://api.pushover.net/1/messages.json"
+#         data = {
+#             "token": PUSHOVER_TOKEN,
+#             "user": PUSHOVER_USER,
+#             "message": msg
+#         }
+#         requests.post(url, data)
+#     if PERSONAL_SITE_USER:
+#         url = PERSONAL_PUSHER_URL
+#         data = {
+#             "title": "VISA - " + str(title),
+#             "user": PERSONAL_SITE_USER,
+#             "pass": PERSONAL_SITE_PASS,
+#             "email": PUSH_TARGET_EMAIL,
+#             "msg": msg,
+#         }
+#         requests.post(url, data)
 
 
 def auto_action(label, find_by, el_type, action, value, sleep_time=0):
@@ -155,22 +153,41 @@ def start_process():
     print("\n\tlogin successful!\n")
 
 def reschedule(date):
-    time = get_time(date)
+    print(f"Rescheduleing! new date: {date}")
+    new_date = datetime.strptime(date, "%Y-%m-%d")
+    new_time = get_time(date)
     driver.get(APPOINTMENT_URL)
+
     headers = {
         "User-Agent": driver.execute_script("return navigator.userAgent;"),
         "Referer": APPOINTMENT_URL,
-        "Cookie": "_yatri_session=" + driver.get_cookie("_yatri_session")["value"]
+        "Cookie": "_yatri_session=" + driver.get_cookie("_yatri_session")["value"],
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Accept-Language": "en-US,en;q=0.9,ru;q=0.8",
+        "Connection": "keep-alive",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        "Cache-Control": "max-age = 0",
+        "Origin": "https://ais.usvisa-info.com",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1",
+        "sec-ch-ua": "\"Not A(Brand\";v=\"99\", \"Google Chrome\";v=\"121\", \"Chromium\";v=\"121\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
     }
     data = {
-        "utf8": driver.find_element(by=By.NAME, value='utf8').get_attribute('value'),
         "authenticity_token": driver.find_element(by=By.NAME, value='authenticity_token').get_attribute('value'),
         "confirmed_limit_message": driver.find_element(by=By.NAME, value='confirmed_limit_message').get_attribute('value'),
         "use_consulate_appointment_capacity": driver.find_element(by=By.NAME, value='use_consulate_appointment_capacity').get_attribute('value'),
         "appointments[consulate_appointment][facility_id]": FACILITY_ID,
         "appointments[consulate_appointment][date]": date,
-        "appointments[consulate_appointment][time]": time,
+        "appointments[consulate_appointment][time]": new_time,
     }
+    print(f"request headers: {headers}")
+    print(f"request data: {data}")
     r = requests.post(APPOINTMENT_URL, headers=headers, data=data)
     if(r.text.find('Successfully Scheduled') != -1):
         title = "SUCCESS"
@@ -178,6 +195,8 @@ def reschedule(date):
     else:
         title = "FAIL"
         msg = f"Reschedule Failed!!! {date} {time}"
+        print(f"headers: {r.headers}")
+        print(f"response reason: {r.reason}")
     return [title, msg]
 
 
@@ -256,7 +275,7 @@ if __name__ == "__main__":
                 msg = f"List is empty, Probabely banned!\n\tSleep for {BAN_COOLDOWN_TIME} hours!\n"
                 print(msg)
                 info_logger(LOG_FILE_NAME, msg)
-                send_notification("BAN", msg)
+                # send_notification("BAN", msg)
                 driver.get(SIGN_OUT_LINK)
                 time.sleep(BAN_COOLDOWN_TIME * hour)
                 first_loop = True
@@ -270,10 +289,13 @@ if __name__ == "__main__":
                 info_logger(LOG_FILE_NAME, msg)
                 date = get_available_date(dates)
                 if date:
+                    print('\a')
                     # A good date to schedule for
                     END_MSG_TITLE, msg = reschedule(date)
                     break
+                print(f"retry_time_L_bound: {RETRY_TIME_L_BOUND}")
                 RETRY_WAIT_TIME = random.randint(RETRY_TIME_L_BOUND, RETRY_TIME_U_BOUND)
+                print(f"wait time: {RETRY_WAIT_TIME}")
                 t1 = time.time()
                 total_time = t1 - t0
                 msg = "\nWorking Time:  ~ {:.2f} minutes".format(total_time/minute)
@@ -281,7 +303,7 @@ if __name__ == "__main__":
                 info_logger(LOG_FILE_NAME, msg)
                 if total_time > WORK_LIMIT_TIME * hour:
                     # Let program rest a little
-                    send_notification("REST", f"Break-time after {WORK_LIMIT_TIME} hours | Repeated {Req_count} times")
+                    # send_notification("REST", f"Break-time after {WORK_LIMIT_TIME} hours | Repeated {Req_count} times")
                     driver.get(SIGN_OUT_LINK)
                     time.sleep(WORK_COOLDOWN_TIME * hour)
                     first_loop = True
@@ -290,15 +312,16 @@ if __name__ == "__main__":
                     print(msg)
                     info_logger(LOG_FILE_NAME, msg)
                     time.sleep(RETRY_WAIT_TIME)
-        except:
+        except Exception as e:
             # Exception Occured
+            print(f"exception: {e}")
             msg = f"Break the loop after exception!\n"
             END_MSG_TITLE = "EXCEPTION"
             break
 
 print(msg)
 info_logger(LOG_FILE_NAME, msg)
-send_notification(END_MSG_TITLE, msg)
+# send_notification(END_MSG_TITLE, msg)
 driver.get(SIGN_OUT_LINK)
 driver.stop_client()
 driver.quit()
